@@ -1,0 +1,13 @@
+---
+title: "About"
+---
+
+Esse trabalho é fruto de uma avaliação final do curso de extensão "Relatórios Reprodutivos no R" realizado pelo IME-USP.
+
+## Sobre mim
+
+Olá, eu sou Lucas Esteves de Souza!
+
+Graduando de Ciências Sociais na universidade Estadual de Campinas (Unicamp) e Ciência de Dados. É membro do Projeto de Extensão em Educação Política (Proeep), onde realiza aulas e atividades de divulgação científica em escolas e cursinhos. Também pesquisa sobre o tema juventude e participação política. Além disso, é redator do portal de conteúdo Politize. Possui conhecimento e experiência, obtidos por cursos e trabalhos de pesquisa, na extração, análise e visualização de dados com R e Power BI.
+
+[![](images/174857.png){width="45"}](https://www.linkedin.com/in/lucasseouza/) [![](images/25231-01.png){width="45"}](https://github.com/lucassesouza)

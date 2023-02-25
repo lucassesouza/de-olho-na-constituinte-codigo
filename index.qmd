@@ -1,0 +1,537 @@
+---
+title: "De Olho na Constituinte"
+format: html
+editor: visual
+website:
+ navbar:
+   background: primary
+   search: true
+   right:
+   - text: "Home"
+---
+
+```{r echo = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+A Assembleia Constituinte de 1987 teve a responsabilidade de elaborar uma nova Constituição Federal para substituir a que havia sido instaurada durante a ditadura militar (1964-1985). Os seus membros foram eleitos durante as eleições gerais de 1986, seguindo o modelo de Congresso Constituinte, que difere de uma Constituinte Exclusiva, em que os representantes são eleitos com o propósito específico de elaborar a constituição. Assim, os membros da Assembleia Constituinte acumularam a função de congressistas e constituintes, permanecendo em seus cargos após o término da elaboração da nova Constituição.
+
+## Pacotes e versões utilizadas
+
+```{r}
+# R version: 4.2.2
+
+library(geobr) #Version: 1.7.0
+library(sf) #Version: 1.0-9
+library(leaflet) #Version: 2.1.1
+library(rvest) #Version: 1.0.3
+library(stringr) #Version: 1.5.0
+library(dplyr) #Version: 1.0.10
+library(readr) #Version: 2.1.3
+library(tidyr) #Version: 1.2.1
+library(ggplot2) #Version: 3.4.0
+library(tidyverse) #Version: 1.3.2
+library(plotly) #Version 4.10.1
+library(devtools) #Version 2.4.5
+library(reactable) #Version 0.4.3
+library(ggparliament) #Version 2.0.0
+library(bbplot) #Version 0.2
+```
+
+# Banco de Dados
+
+Foram utilizados nesse projeto dois banco de dados, construídos pelo autor através dos dados obtidos no site oficial da [Câmara dos Deputados](https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituintes/constituintes). Os banco de dados encontram-se disponíveis para uso no [GitHub](https://github.com/lucassesouza/de-olho-na-constituinte-codigo).
+
+## Construindo o BD Parlamento Constituinte (1987-1988)
+
+> O Parlamento Constituinte embarca tantos os deputados federais quanto os senadores, pois todos participaram dos processos de tomada de decisão durante a Assembleia Constituinte. Porém, para proporcionar a realização de um maior número de análises, é possível diferenciálos a partir da variável `Cargo_Legislativo` .
+
+~As informações foram obtidas por web scraping através das seguintes páginas: [deputados](https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituintes/parlamentaresconstituintes/deputados-constituintes) e [senadores](https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituintes/parlamentaresconstituintes/senadores-constituintes).~
+
+```{r}
+
+# Web scraping dos senadores constituintes
+site_senadores = read_html("https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituintes/parlamentaresconstituintes/senadores-constituintes")
+
+senadores_constituintes = site_senadores %>% 
+  html_element("#content-core") %>% 
+  html_text() %>% 
+  str_split("\\d+\\.", simplify = TRUE) %>% 
+  t() %>% 
+  gsub("\\n*", "", .) %>%
+  as.data.frame() %>% 
+  slice(-1)
+
+senadores_constituintes$Cargo_Legislativo = rep("Senador")
+
+# Web scraping dos deputados constituintes
+site_deputados = read_html("https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/constituintes/parlamentaresconstituintes/deputados-constituintes")
+
+deputados_constituintes = site_deputados %>% 
+  html_element("#content-core") %>% 
+  html_text() %>% 
+  str_split("\\d+\\.", simplify = TRUE) %>% 
+  t() %>% 
+  gsub("\\n*", "", .) %>%
+  as.data.frame() %>% 
+  slice(-1)
+
+deputados_constituintes$Cargo_Legislativo = rep("Deputado")
+
+# Juntando em um unico data frame os dados dos deputados e senadores constituintes
+parlamentares_constituintes = bind_rows(deputados_constituintes, senadores_constituintes)
+
+## limpando e formatando os dados
+parlamentares_constituintes = parlamentares_constituintes %>% 
+  mutate(Parlamentar = str_extract(parlamentares_constituintes$V1, "(.*?)-")) %>% 
+  mutate(Partido = str_extract(parlamentares_constituintes$V1, "-(.*?)/")) %>%
+  mutate(UF = str_extract(parlamentares_constituintes$V1, "/(.*?) ")) %>%
+  mutate(Parlamentar = gsub("[^[:alnum:][:space:]]", "", Parlamentar)) %>%
+  mutate(Partido = gsub("[^[:alnum:]]", "", Partido)) %>%
+  mutate(UF = gsub("[^[:alnum:]]", "", UF)) %>%
+  select(-V1) %>%
+  select(Parlamentar, Cargo_Legislativo, Partido, UF)
+
+parlamentares_constituintes$Parlamentar = str_trim(parlamentares_constituintes$Parlamentar)
+
+### atribuindo e alterando informações faltantes ou erradas a alguns deputados
+parlamentares_constituintes = parlamentares_constituintes %>% 
+  mutate(UF = case_when(
+    Parlamentar == "AÉCIO DE BORDA" ~ "CE",
+    Parlamentar == "AÉCIO NEVES" ~ "MG",
+    Parlamentar == "FLÁVIO ROCHA" ~ "RN",
+    Parlamentar == "FRANCISCO AMARAL" ~ "SP",
+    Parlamentar == "MALULY NETTO" ~ "SP",
+    Parlamentar == "MARCELO CORDEIRO" ~ "BA",
+    Parlamentar == "MATTOS LEÃO" ~ "PR",
+    Parlamentar == "MAURÍCIO FRUET" ~ "PR",
+    Parlamentar == "MAX ROSENMANN" ~ "PR",
+    Parlamentar == "MELLO REIS" ~ "MG",
+    Parlamentar == "MELO FREIRE" ~ "MG",
+    Parlamentar == "MENDES BOTELHO" ~ "SP",
+    Parlamentar == "MOYSÉS PIMENTEL" ~ "CE",
+    Parlamentar == "MUSSA DEMES" ~ "PI",
+    Parlamentar == "NELSON SEIXAS" ~ "SP",
+    Parlamentar == "FELIPE MENDES" ~ "PI",
+    Parlamentar == "DÉLIO BRAZ" ~ "GO",
+    Parlamentar == "DARCY POZZA" ~ "RS",
+    Parlamentar == "WILSON MARTINS" ~ "MS",
+    Parlamentar == "JORGE BORNHAUSEN" ~ "SC",
+    Parlamentar == "HUGO NAPOLEÃO" ~ "PI",
+    Parlamentar == "CHAGAS RODRIGUES" ~ "PI",
+    Parlamentar == "ÁLVARO PACHECO" ~ "PI",
+    TRUE ~ as.character(UF)
+  )) %>%
+  mutate(Partido = case_when(
+    Parlamentar == "CARLOS VIRGÍLIOPDS" ~ "PDS",
+    Parlamentar == "DIONÍSIO DAL" ~ "PFL",
+    TRUE ~ as.character(Partido)
+  )) %>%
+  mutate(Parlamentar = case_when(
+    Parlamentar == "CARLOS VIRGÍLIOPDS" ~ "CARLOS VIRGÍLIO",
+    Parlamentar == "DIONÍSIO DAL" ~ "DIONÍSIO DAL-PRÁ",
+    TRUE ~ as.character(Parlamentar)
+  ))
+
+# Atribuindo genero aos parlamentares através do pacote "genderBR"
+parlamentares_constituintes = parlamentares_constituintes %>%
+  mutate(Genero = genderBR::get_gender(parlamentares_constituintes$Parlamentar, threshold = 0.7))
+
+## alguns nomes não tiveram atribuições ou estavam incorretas
+### adicionando e concertando as atribuicoes feitas pelo pacote genderBR
+parlamentares_constituintes = parlamentares_constituintes %>%
+  mutate(Genero = case_when(
+    Parlamentar %in% c("MEIRA FILHO", "AGASSIZ ALMEIDA", "ALAIR FERREIRA", "ALCENI GUERRA",	"BOCAYUVA CUNHA", "CARREL BENEVIDES",	"COSTA FERREIRA",	"CUNHA BUENO", "DARCY DEITOS", "DARCY POZZA",	"DASO COIMBRA",	"DORETO CAMPANARI",	"EDME TAVARES",	"FADAH GATTASS",	"FARABULINI JÚNIOR",	"FLORICENO PAIXÃO",	"FRANÇA TEIXEIRA",	"ITURIVAL NASCIMENTO",	"JACY SCANAGATTA",	"KOYU IHA",	"LYSÂNEAS MACIEL",	"MAGUITO VILELA",	"MALULY NETTO",	"NAPHTALI ALVES DE SOUZA",	"NION ALBERNAZ",	"NYDER BARBOSA",	"PAES DE ANDRADE",	"PAES LANDIM",	"PIMENTA DA VEIGA",	"ROSÁRIO CONGRO NETO", "ROSPIDE NETTO",	"SIGMARINGA SEIXAS", "TIDEI DE LIMA",	"ULDURICO PINTO",	"VINGT ROSADO",	"VIRGILDÁSIO DE SENNA",	"LEITE CHAVES", "LOUREMBERG NUNES ROCHA", "ROSA PRATA", "ZIZA VALADARES"
+              ) ~ "Male",
+    Parlamentar == "SADIE HAUACHE" ~ "Female",
+    TRUE ~ as.character(Genero)
+  ))
+
+### traduzindo os termos "Male" e "Female"
+parlamentares_constituintes = parlamentares_constituintes %>%
+  mutate(Genero = case_when(
+    Genero %in% "Male" ~ "Homem",
+    Genero %in% "Female" ~ "Mulher"
+  ))
+
+# Adicionando os cargos dos integrantes da mesa diretora
+parlamentares_constituintes = parlamentares_constituintes %>%
+  mutate(MesaDiretora = case_when(
+    Parlamentar %in% "ULYSSES GUIMARÃES" ~ "Presidente",
+    Parlamentar %in% "MAURO BENEVIDES" ~ "1º Vice-Presidente",
+    Parlamentar %in% "JORGE ARBAGE" ~ "2º Vice-Presidente",
+    Parlamentar %in% "MARCELO CORDEIRO" ~ "1º Secretário",
+    Parlamentar %in% "MÁRIO MAIA" ~ "2º Secretário",
+    Parlamentar %in% "ARNALDO FARIA DE SÁ" ~ "3º Secretário",
+    Parlamentar %in% "BENEDITA DA SILVA" ~ "Suplente",
+    Parlamentar %in% "LUIZ SOYER" ~ "Suplente",
+    Parlamentar %in% "SOTERO CUNHA" ~ "Suplente",
+    TRUE ~ as.character("Sem cargo")
+  ))
+
+parlamentares_constituinte = parlamentares_constituintes %>%
+  mutate(Parlamentar = str_to_title(Parlamentar))
+```
+
+## Abrindo o Banco de Dados das Comissões e Subcomissões
+
+| Esse banco de dados foi construído direto no excel
+
+```{r}
+# abrindo o banco de dados a partir de uma planilha do excel
+comissoes_constituinte = readxl::read_excel("data/integrantes-comissoes.xlsx")
+```
+
+# Conhecendo o Parlamento Constituite (1987-1988)
+
+Veja alguma das características dos deputados e senadores responsáveis por debater e desenvolver a Constituição Federal de 1988.
+
+## Representação Partidária
+
+Número de parlamentares de cada partido que integrou a Assembleia Constituinte.
+
+```{r}
+# Agrupando os partidos pelo número de parlamentares
+contagem_partidos = parlamentares_constituinte %>% 
+  group_by(Partido) %>% 
+  count() %>%  
+  arrange(desc(n))
+
+contagem_partidos %>%
+  select(Partido, n) %>%
+  reactable(searchable = TRUE,
+            pagination = FALSE,
+            fullWidth = TRUE,
+            height = 400,
+            width = 600,
+            striped = TRUE,
+            columns = list(n = colDef(name = "Número de parlamentares")))
+```
+
+```{r}
+## Fazendo um gráfico parlamentar com o pacote ggparliament
+# Atribuindo cor aos partidos 
+contagem_partidos = contagem_partidos %>%
+  mutate(Cor = case_when(
+    Partido == "PMDB" ~ "blue",
+    Partido == "PFL" ~ "lightseagreen",
+    Partido == "PDS" ~ "midnightblue",
+    Partido == "PDT" ~ "darkolivegreen",
+    Partido == "PTB" ~ "magenta",
+    Partido == "PT" ~ "red",
+    Partido == "PL" ~ "darkseagreen4",
+    Partido == "PSDB" ~ "tomato",
+    Partido == "PDC" ~ "limegreen",
+    Partido == "PCB" ~ "gold",
+    Partido == "PCdoB" ~ "mediumorchid4",
+    Partido == "PSB" ~ "mediumspringgreen",
+    Partido == "PMB" ~ "palevioletred4",
+    Partido == "PMD" ~ "darkgreen",
+    Partido == "PSC" ~ "gray"
+  ))
+
+# Construindo gráfico parlamentar com o uso do ggparliament
+coordenadas_parlamento = parliament_data(
+  election_data = contagem_partidos, 
+  type = "semicircle", 
+  parl_rows = 7, 
+  party_seats = contagem_partidos$n)
+
+plot_parlamento_partido = coordenadas_parlamento %>% 
+  ggplot(aes(x = x, y = y, colour = Partido, text = paste0("Partido: ", coordenadas_parlamento$Partido, "\nNúmero de parlamentares: ", coordenadas_parlamento$n))) +
+  ggparliament::geom_parliament_seats(size = 2)
+
+plot_parlamento_partido = plot_parlamento_partido + 
+  bbplot::bbc_style() + 
+  ggtitle("Composição Partidária do Parlamento Constituinte 1987-1988") +
+  theme(plot.title = element_text(hjust = 0.55, size = 14),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank()) +
+  scale_colour_manual(values = coordenadas_parlamento$Cor,
+                      limits = coordenadas_parlamento$Partido)
+
+plot_parlamento_partido
+```
+
+## Composição parlamentar por gênero
+
+Quantidade de homens e mulheres na composição do Parlamento Constituinte.
+
+```{r}
+# Agrupando os parlamentares por genero
+composicao_genero = parlamentares_constituinte %>%
+  group_by(Genero) %>%
+  count() 
+
+# Criando o gráfico
+composicao_genero %>%
+  ggplot(aes(x = "", y = n, fill = Genero, label = n)) +
+  geom_bar(stat = "identity", width = 0.3) +
+  coord_flip() +
+  ggtitle("Número de Parlamentares Constituintes Homens e Mulheres") + 
+  theme(plot.title = element_text(size = 1, face = "bold")) +
+  geom_text(color = "white", size = 5, position = position_stack(vjust = 0.5)) +
+  scale_fill_manual(values = c("orange", "blue"), name = "Gênero", breaks = c("Mulher", "Homem")) +
+theme_void()
+```
+
+## Presença de representantes das Unidades Federativas no Parlamento
+
+Quantidade de parlamentares constituintes por Unidade Federativa[^1].
+
+[^1]: O Estado de Tocantins foi instalado somente em 1989.
+
+| clique no estado para visualizar os parlamentares e partidos.
+
+```{r}
+composicao_uf = parlamentares_constituinte %>%
+  group_by(UF) %>%
+  count()
+
+parlamentares_uf = parlamentares_constituinte %>%
+  group_by(UF) %>%
+  summarize(parlamentares = paste0(unique(Parlamentar), collapse = ", "),
+            partidos = paste0(unique(Partido), collapse = ", "))
+
+mapa = read_state(showProgress = FALSE) %>%
+  dplyr::rename(UF = abbrev_state)
+
+mapa = mapa %>%
+  left_join(composicao_uf, by = "UF") %>%
+  left_join(parlamentares_uf, by = "UF") %>%
+  na.omit()
+
+# Cria o mapa
+leaflet(data = mapa) %>%
+   setView(lng = -50, lat = -15, zoom = 4) %>%
+  addPolygons(fillColor = ~colorNumeric(palette = "YlGn", domain = mapa$n)(n),
+              fillOpacity = 0.8,
+              color = "#BDBDBD",
+              weight = 1,
+              highlight = highlightOptions(
+                weight = 2,
+                color = "#666",
+                fillOpacity = 0.7,
+                bringToFront = TRUE),
+              label = ~paste0(UF, ": ", n),
+              popup = paste0("UF: ", mapa$UF,
+                           "<br>Parlamentares: ", mapa$parlamentares,
+                           "<br>Partidos: ", mapa$partidos)) %>%
+  addLegend("bottomright",
+            title = "Quantidade de Parlamentares",
+            pal = colorNumeric(palette = "YlGn", domain = mapa$n),
+            values = mapa$n,
+            opacity = 0.8)
+```
+
+## Integrantes da Mesa Diretora
+
+A Mesa Diretora organizava os trabalhos da Assembleia Constituinte, seus integrantes foram eleitos pela própria Assembleia.
+
+```{r}
+# Ordenando os cargos
+ordem_cargos = c("Presidente", "1º Vice-Presidente", "2º Vice-Presidente", 
+                  "1º Secretário", "2º Secretário", "3º Secretário", 
+                  "Suplente")
+
+# Criando uma tabela
+parlamentares_constituinte %>%
+  select(Parlamentar, Cargo_Legislativo, Partido, MesaDiretora) %>%
+  filter(MesaDiretora != "Sem cargo") %>%
+  mutate(MesaDiretora = factor(MesaDiretora, levels = ordem_cargos))%>%
+  arrange(MesaDiretora) %>%
+  rename("Mesa Diretora" = MesaDiretora, "Cargo Legislativo" = Cargo_Legislativo) %>%
+  reactable(pagination = FALSE, 
+            height = 350,
+            width = 600,
+            fullWidth = TRUE,
+            striped = TRUE)
+```
+
+## Parlamentares Constituintes
+
+Veja todos os deputados e senadores que participaram da Assembleia Constituinte
+
+```{r}
+parlamentares_constituinte %>%
+  select(Parlamentar, Cargo_Legislativo, Partido, MesaDiretora) %>%
+  reactable(filterable = TRUE, 
+            pagination = FALSE, 
+            height = 400,
+            width = 600,
+            fullWidth = TRUE,
+            striped = TRUE,
+            columns = list(
+              Cargo_Legislativo = colDef(name = "Cargo Legislativo"),
+              MesaDiretora = colDef(name = "Mesa Diretora")))
+
+```
+
+# Comissões e Subcomissões Temáticas
+
+Os trabalhos da Assembleia Constituinte foram divididos em 24 subcomissões temáticas, pertencentes a 8 comissões temáticas. Detalhes sobre as atas e documentos das comissões e subcomissões podem ser encontrados [aqui](https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada/o-processo-constituinte/lista-de-comissoes-e-subcomissoes):
+
+## Comissões e número de integrantes
+
+```{r}
+comissao_n_integrantes = comissoes_constituinte %>%
+  group_by(Comissao) %>%
+  count()
+
+plot_comissao = ggplot(comissao_n_integrantes, aes(x = reorder(Comissao, n), y= n, text = paste0(Comissao, "\n Número de integrantes: ", n), fill = Comissao)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  coord_flip() +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 45)) +
+  ggtitle("Número de Integrantes por Comissão") +
+  xlab("Comissão") +
+  ylab("Número de Integrantes") +
+  theme_classic() +
+  theme(legend.position = "none",
+        plot.background = element_rect(fill = "transparent", color = NA))
+
+ggplotly(plot_comissao, tooltip = c("text")) %>%
+  layout(barmode = "stack",
+         paper_bgcolor = "transparent",
+         plot_bgcolor = "transparent") %>%
+  config(modeBarButtonsToRemove = c("zoomIn2d", "zoomOut2d", "pan2d", "zoom2d", "select2d", "lasso2d", "autoScale2d"))  
+
+```
+
+## Subcomissões e número de integrantes
+
+```{r}
+subcomissao_n_integrantes = comissoes_constituinte %>%
+  group_by(Subcomissao) %>%
+  count() %>%
+  na.omit
+
+subcomissao_n_integrantes$Subcomissao = str_replace_all(subcomissao_n_integrantes$Subcomissao, "Subcomissão ", "")
+
+plot_subcomissao = ggplot(subcomissao_n_integrantes, aes(x = reorder(Subcomissao, n), y = n, text = paste0(Subcomissao, "<br>Número de Integrantes: ", n), fill = Subcomissao)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  coord_flip() +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 60)) +
+  ggtitle("Número de Integrantes por Subcomissão") +
+  xlab("Subcomissão") +
+  ylab("Número de Integrantes") +
+  theme_test() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 6),
+        axis.ticks.y = element_blank(),
+        plot.title = element_text(size = 11, face = "bold"),
+        plot.background = element_rect(fill = "transparent", color = NA))
+
+ggplotly(plot_subcomissao, tooltip = c("text")) %>%
+  layout(barmode = "stack",
+         paper_bgcolor = "transparent",
+         plot_bgcolor = "transparent") %>%
+  config(modeBarButtonsToRemove = c("zoomIn2d", "zoomOut2d", "pan2d", "zoom2d", "select2d", "lasso2d", "autoScale2d"))
+
+```
+
+# Discursos
+
+Segundo a Câmara dos Deputados, os parlamentares constituintes realizaram 19.089 intervenções verbais, dentre elas discursos, intervenções, encaminhamentos, etc.
+
+> Veja aqui uma wordcloud de algum dos discursos que marcaram a Assembleia Constituinte. Através desse recurso é possível analisar a temática e ênfase das falas, bem como comparar entre os parlamentares.
+
+```{r}
+# Lendo o PDF dos discursos
+
+## Ulysses
+pdf_discurso_ulysses = textreadr::read_document("data/discursos/Ulysses Guimaraes.pdf")
+writeLines(pdf_discurso_ulysses, "data/discursos/Ulysses Guimaraes.txt")
+
+## Lula
+pdf_discurso_lula = textreadr::read_document("data/discursos/Luiz Inacio.pdf")
+writeLines(pdf_discurso_lula, "data/discursos/Luiz Inacio.txt")
+
+## Ailton Krenak
+pdf_discurso_krenak = textreadr::read_document("data/discursos/Ailton Krenak.pdf")
+writeLines(pdf_discurso_krenak, "data/discursos/Ailton Krenak.txt")
+
+# Criando um único token a partir dos 3 discursos
+txt_discursos = readtext::readtext(c("data/discursos/Ailton Krenak.txt", "data/discursos/Luiz Inacio.txt", "data/discursos/Ulysses Guimaraes.txt"))
+
+tok_discursos = txt_discursos %>%
+  tidytext::unnest_tokens(word, text)
+
+## Limpando os dados
+### eliminando stopwords
+stop_w = tibble(word = quanteda::stopwords(source = "stopwords-iso", language = "pt"))
+
+tok_discursos = tok_discursos %>%
+ anti_join(stop_w)
+
+## Corpus
+corp_discursos = quanteda::corpus(txt_discursos)
+
+toks = quanteda::tokens(corp_discursos, remove_punct = TRUE, remove_numbers = TRUE)
+toks = quanteda::tokens_select(toks, pattern = quanteda::stopwords("pt"), selection = "remove")
+toks = quanteda::tokens_remove(toks, pattern = c("palmas", "é", "vai", "srs", "senhores"))
+
+## construindo DFM
+dfmat = quanteda::dfm(toks)
+
+dfm_krenak = quanteda::dfm_subset(dfmat, subset = docid_ %in% "Ailton Krenak.txt")
+
+dfm_lula = quanteda::dfm_subset(dfmat, subset = docid_ %in% "Luiz Inacio.txt")
+
+dfm_ulysses = quanteda::dfm_subset(dfmat, subset = docid_ %in% "Ulysses Guimaraes.txt")
+```
+
+## Lula
+
+Razões do voto contrário do Partido dos Trabalhadores ao Projeto de Constituição, realizado em 22 de setembro de 1988.
+
+```{r}
+# definindo cores
+cores = c("#0072B2", "#E69F00", "#F0E442", "#009E73", "#D55E00", "#CC79A7")
+
+# gerando nuvem de palavras
+wordcloud2 = quanteda.textplots::textplot_wordcloud(dfm_lula,
+                   max.words = 100,
+                   random.order = FALSE,
+                   color = cores,
+                   rot.per = 0.2,
+                   random.color = TRUE)
+```
+
+## Ulysses Guimarães
+
+Pronunciamento favorável a promulgação da nova constituição, realizado em 05/10/1988.
+
+```{r}
+# gerando nuvem de palavras
+wordcloud3 = quanteda.textplots::textplot_wordcloud(dfm_ulysses,
+                   max.words = 100,
+                   random.order = FALSE,
+                   color = cores,
+                   rot.per = 0.2,
+                   random.color = TRUE)
+```
+
+## Ailton Krenak
+
+A participação na Assembleia Constituinte não se limitou aos parlamentares, membros da sociedade civil também tiveram presença no processo. Ailton Krenak, filósofo e líder indígena, proferiu um discurso-protesto em defesa dos direitos dos povos indígenas, realizado em 04 de setembro de 1987.
+
+```{r}
+# gerando nuvem de palavras
+wordcloud1 = quanteda.textplots::textplot_wordcloud(dfm_krenak,
+                   max.words = 100,
+                   random.order = FALSE,
+                   color = cores,
+                   rot.per = 0.2,
+                   random.color = TRUE)
+```
+
+Obrigado por ver até aqui! 😉
+
+# Referências
+
+<https://www2.camara.leg.br/atividade-legislativa/legislacao/Constituicoes_Brasileiras/constituicao-cidada>
+
+<https://rforpoliticalscience.com/2023/01/19/how-to-create-semi-circle-parliament-graphs-with-the-ggparliament-package-in-r/>
+
+<https://selvagemciclo.com.br/wp-content/uploads/2021/07/CADERNO27_CONSTITUINTE.pdf>
